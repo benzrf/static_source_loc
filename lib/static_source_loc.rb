@@ -3,6 +3,8 @@ require 'find'
 require 'ruby_parser'
 
 module StaticSourceLoc
+	VERSION = '0.0.1'
+
 	SourceLoc = Struct.new :file, :line
 
 	class Source
