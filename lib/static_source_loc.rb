@@ -3,7 +3,7 @@ require 'find'
 require 'ruby_parser'
 
 module StaticSourceLoc
-	VERSION = '0.0.1'
+	VERSION = '0.1.0'
 
 	SourceLoc = Struct.new :file, :line
 
@@ -87,9 +87,11 @@ module StaticSourceLoc
 			when :block
 				sexpr.values.each &method(:process_code)
 			when :class, :module
-				new_submodule(sexpr[1]).
-					new_loc(sexpr.file, sexpr.line).
-					process_code(s(:block).concat sexpr.drop(3))
+				if sexpr[1].is_a? Symbol
+					new_submodule(sexpr[1]).
+						new_loc(sexpr.file, sexpr.line).
+						process_code(s(:block).concat sexpr.drop(3))
+				end
 			when :sclass
 				if sexpr[1] == s(:self)
 					singleton_class.
