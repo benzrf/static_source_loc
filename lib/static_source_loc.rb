@@ -3,7 +3,7 @@ require 'find'
 require 'ruby_parser'
 
 module StaticSourceLoc
-	VERSION = '0.1.0'
+	VERSION = '1.0.0'
 
 	SourceLoc = Struct.new :file, :line
 
@@ -131,7 +131,9 @@ module StaticSourceLoc
 			sexprs = load_sexprs(dir, file_test, dir_test, ignore_errors)
 			toplevel = ModuleSource.new :Object, nil
 			sexprs.each &toplevel.method(:process_code)
-			toplevel
+			submodules = toplevel.submodules
+			submodules.values.each {|ms| ms.instance_variable_set :@parent, nil}
+			submodules.merge toplevel.methods
 		end
 
 		private
@@ -148,7 +150,8 @@ module StaticSourceLoc
 			sexprs = files.map do |fn|
 				File.open fn do |file|
 					begin
-						Parser.parse file.read
+						Parser.reset
+						Parser.parse file.read, fn
 					rescue RubyParser::SyntaxError, Racc::ParseError
 						raise unless ignore_errors
 					end
