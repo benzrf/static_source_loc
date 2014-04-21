@@ -17,6 +17,7 @@ module StaticSourceLoc
 
 		def new_loc(file, line)
 			source_locs << SourceLoc[file, line]
+			self
 		end
 
 		def source_loc
@@ -78,6 +79,33 @@ module StaticSourceLoc
 				hash.merge! child.to_hash if child.respond_to? :to_hash
 			end
 		end
+
+		def process_code(sexpr)
+			case sexpr.node_type
+			when :block
+				sexpr.values.each &method(:process_code)
+			when :class, :module
+				new_submodule(sexpr[1]).
+					new_loc(sexpr.file, sexpr.line).
+					process_code(s(:block).concat sexpr.drop(3))
+			when :sclass
+				if sexpr[1] == s(:self)
+					singleton_class.
+						new_loc(sexpr.file, sexpr.line).
+						process_code(s(:block).concat sexpr.drop(2))
+				end
+			when :defn
+				new_method(sexpr[1]).
+					new_loc(sexpr.file, sexpr.line)
+			when :defs
+				if sexpr[1] == s(:self)
+					singleton_class.
+						new_method(sexpr[2]).
+						new_loc(sexpr.file, sexpr.line)
+				end
+			end
+			self
+		end
 	end
 
 	class MethodSource < Source
@@ -92,28 +120,39 @@ module StaticSourceLoc
 
 	Parser = RubyParser.new
 
-	def self.analyze(dir, file_test=nil, dir_test=nil, ignore_errors=true)
-		file_test ||= /\.rb\Z/
-		dir_test  ||= proc {true}
-		files = Find.to_enum(:find, dir).each_with_object([]) do |path, files|
-			if File.file? path
-				next unless file_test === path
-				files << path
-			else
-				Find.prune unless dir_test === path
-			end
+	class << self
+		def analyze(dir, file_test=nil, dir_test=nil, ignore_errors=true)
+			file_test ||= /\.rb\Z/
+			dir_test  ||= proc {true}
+			sexprs = load_sexprs(dir, file_test, dir_test, ignore_errors)
+			toplevel = ModuleSource.new :Object, nil
+			sexprs.each &toplevel.method(:process_code)
+			toplevel
 		end
-		sexprs = files.map do |fn|
-			File.open fn do |file|
-				begin
-					Parser.parse file.read
-				rescue RubyParser::SyntaxError, Racc::ParseError
-					raise unless ignore_errors
+
+		private
+
+		def load_sexprs(dir, file_test, dir_test, ignore_errors)
+			files = Find.to_enum(:find, dir).each_with_object([]) do |path, files|
+				if File.file? path
+					next unless file_test === path
+					files << path
+				else
+					Find.prune unless dir_test === path
 				end
 			end
+			sexprs = files.map do |fn|
+				File.open fn do |file|
+					begin
+						Parser.parse file.read
+					rescue RubyParser::SyntaxError, Racc::ParseError
+						raise unless ignore_errors
+					end
+				end
+			end
+			sexprs.compact!
+			sexprs
 		end
-		sexprs.compact!
-		sexprs
 	end
 end
 
