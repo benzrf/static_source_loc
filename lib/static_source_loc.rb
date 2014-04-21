@@ -1,4 +1,6 @@
 require 'forwardable'
+require 'find'
+require 'ruby_parser'
 
 module StaticSourceLoc
 	SourceLoc = Struct.new :file, :line
@@ -86,6 +88,32 @@ module StaticSourceLoc
 				"#{parent.parent.qualname if parent.parent}.#{name}"
 			end
 		end
+	end
+
+	Parser = RubyParser.new
+
+	def self.analyze(dir, file_test=nil, dir_test=nil, ignore_errors=true)
+		file_test ||= /\.rb\Z/
+		dir_test  ||= proc {true}
+		files = Find.to_enum(:find, dir).each_with_object([]) do |path, files|
+			if File.file? path
+				next unless file_test === path
+				files << path
+			else
+				Find.prune unless dir_test === path
+			end
+		end
+		sexprs = files.map do |fn|
+			File.open fn do |file|
+				begin
+					Parser.parse file.read
+				rescue RubyParser::SyntaxError, Racc::ParseError
+					raise unless ignore_errors
+				end
+			end
+		end
+		sexprs.compact!
+		sexprs
 	end
 end
 
